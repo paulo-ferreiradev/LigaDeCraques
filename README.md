@@ -45,22 +45,18 @@ This project is organized as a **Monorepo**:
    Install dependencies:
    ```
 
-Bash
 npm install
 Environment Configuration:
 Create a .env file in the /api directory and add your Supabase credentials:
 
-Fragmento do código
 DATABASE_URL="postgresql://postgres.[YOUR_PROJECT_ID]:[YOUR_PASSWORD]@[aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true](https://aws-0-eu-west-1.pooler.supabase.com:6543/postgres?pgbouncer=true)"
 DIRECT_URL="postgresql://postgres.[YOUR_PROJECT_ID]:[YOUR_PASSWORD]@db.[YOUR_PROJECT_ID].supabase.co:5432/postgres"
 Database Migrations:
 Sync your database schema with Prisma:
 
-Bash
 npx prisma migrate dev --name init
 Run the application:
 
-Bash
 npm run start:dev
 📖 API Documentation
 Once the backend is running, you can access the interactive Swagger documentation at:
