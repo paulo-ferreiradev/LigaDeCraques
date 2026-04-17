@@ -1,0 +1,68 @@
+// WHY: We use Prisma as our ORM to guarantee type safety and prevent SQL injections.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+}
+
+model Player {
+  id        String              @id @default(uuid())
+  name      String
+  createdAt DateTime            @default(now())
+  
+  // Relations
+  matches   PlayerMatchRecord[]
+  awards    Award[]
+}
+
+model Season {
+  id         String   @id @default(uuid())
+  year       Int
+  seasonType String   // e.g., 'WINTER', 'SUMMER'
+  status     String   // e.g., 'ACTIVE', 'FINISHED'
+  
+  // Relations
+  matches    Match[]
+  awards     Award[]
+}
+
+model Match {
+  id        String              @id @default(uuid())
+  seasonId  String
+  playedAt  DateTime            @default(now())
+  status    String              // e.g., 'SCHEDULED', 'PLAYED'
+  
+  // Relations
+  season    Season              @relation(fields: [seasonId], references: [id])
+  players   PlayerMatchRecord[]
+}
+
+model PlayerMatchRecord {
+  id            String @id @default(uuid())
+  playerId      String
+  matchId       String
+  team          String // 'A' or 'B'
+  pointsEarned  Int    @default(0)
+  paymentStatus String // 'PENDING' or 'PAID'
+
+  // Relations
+  player Player @relation(fields: [playerId], references: [id])
+  match  Match  @relation(fields: [matchId], references: [id])
+
+  // WHY: A player can only have one record per match. 
+  // This composite unique key prevents duplicate entries at the database level.
+  @@unique([playerId, matchId])
+}
+
+model Award {
+  id       String @id @default(uuid())
+  playerId String
+  seasonId String
+  title    String // e.g., 'CHAMPION'
+
+  // Relations
+  player Player @relation(fields: [playerId], references: [id])
+  season Season @relation(fields: [seasonId], references: [id])
+}
