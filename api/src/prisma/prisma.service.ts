@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { PrismaClient } from '@prisma/client';
+export type { PrismaClient as GeneratedPrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg'; // New: Prisma Adapter
 import { Pool } from 'pg'; // New: Connection pool manager
 import 'dotenv/config';
