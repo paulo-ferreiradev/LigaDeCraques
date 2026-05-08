@@ -7,18 +7,10 @@ import { defineConfig } from 'prisma/config';
 dotenv.config({ path: resolve(process.cwd(), '.env') });
 
 const databaseUrl = process.env.DATABASE_URL;
-const directUrl = process.env.DIRECT_URL;
-
-if (!databaseUrl || !directUrl) {
-
-  console.error('❌ Error: DATABASE_URL or DIRECT_URL is missing.');
-  console.error('Current Directory:', process.cwd());
-}
 
 export default defineConfig({
   schema: 'prisma/schema.prisma',
   datasource: {
     url: databaseUrl,
-    directUrl: directUrl,
   },
 });

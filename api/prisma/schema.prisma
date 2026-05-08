@@ -4,65 +4,90 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
+  provider = "postgresql"
+}
+
+model User {
+  id                 String  @id @default(uuid())
+  email              String  @unique
+  passwordHash       String
+  role               String  @default("USER") // e.g., 'ADMIN', 'TREASURER', 'USER'
+  hashedRefreshToken String?
+
+  // WHY: Optional 1-to-1 relation. A user might be a player, or just a system admin/treasurer.
+  playerId String? @unique
+  player   Player? @relation(fields: [playerId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model Player {
-  id        String              @id @default(uuid())
+  id        String   @id @default(uuid())
   name      String
-  createdAt DateTime            @default(now())
-  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   // Relations
-  matches   PlayerMatchRecord[]
-  awards    Award[]
+  // Disambiguated implicit Many-to-Many relations for Team A and Team B
+  teamAMatches Match[] @relation("TeamAMatches")
+  teamBMatches Match[] @relation("TeamBMatches")
+
+  // One-to-Many: A player can be MVP in multiple matches
+  mvpAwards Match[] @relation("MatchMVP")
+
+  // One-to-Many: Financial contributions
+  payments Payment[]
+
+  // One-to-One: A player can have a user account
+  user User?
 }
 
 model Season {
   id         String   @id @default(uuid())
   year       Int
-  seasonType String   // e.g., 'WINTER', 'SUMMER'
-  status     String   // e.g., 'ACTIVE', 'FINISHED'
-  
+  seasonType String // e.g., 'WINTER', 'SUMMER'
+  status     String // e.g., 'ACTIVE', 'FINISHED'
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
   // Relations
-  matches    Match[]
-  awards     Award[]
+  matches Match[]
 }
 
 model Match {
-  id        String              @id @default(uuid())
-  seasonId  String
-  playedAt  DateTime            @default(now())
-  status    String              // e.g., 'SCHEDULED', 'PLAYED'
-  
-  // Relations
-  season    Season              @relation(fields: [seasonId], references: [id])
-  players   PlayerMatchRecord[]
+  id       String   @id @default(uuid())
+  seasonId String
+  season   Season   @relation(fields: [seasonId], references: [id])
+  playedAt DateTime @default(now())
+  status   String   @default("SCHEDULED") // e.g., 'SCHEDULED', 'COMPLETED'
+
+  // Match result (null until Admin inputs the score)
+  teamAScore Int?
+  teamBScore Int?
+
+  // Explicit assignment to Team A and Team B via implicit M2M tables
+  teamAPlayers Player[] @relation("TeamAMatches")
+  teamBPlayers Player[] @relation("TeamBMatches")
+
+  // MVP is awarded after the match concludes
+  mvpId String?
+  mvp   Player? @relation("MatchMVP", fields: [mvpId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
-model PlayerMatchRecord {
-  id            String @id @default(uuid())
-  playerId      String
-  matchId       String
-  team          String // 'A' or 'B'
-  pointsEarned  Int    @default(0)
-  paymentStatus String // 'PENDING' or 'PAID'
-
-  // Relations
-  player Player @relation(fields: [playerId], references: [id])
-  match  Match  @relation(fields: [matchId], references: [id])
-
-  // WHY: A player can only have one record per match. 
-  // This composite unique key prevents duplicate entries at the database level.
-  @@unique([playerId, matchId])
-}
-
-model Award {
+model Payment {
   id       String @id @default(uuid())
   playerId String
-  seasonId String
-  title    String // e.g., 'CHAMPION'
+  player   Player @relation(fields: [playerId], references: [id])
 
-  // Relations
-  player Player @relation(fields: [playerId], references: [id])
-  season Season @relation(fields: [seasonId], references: [id])
+  amount Decimal @db.Decimal(10, 2)
+  status String  @default("PENDING") // e.g., 'PENDING', 'PAID', 'CANCELLED'
+
+  // Audit trail requirements
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // WHY: Soft delete to preserve financial history and guarantee append-only ledger
 }

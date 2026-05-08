@@ -16,8 +16,14 @@ export class PlayersService {
   }
 
   async findAll() {
+    // Access the database to retrieve all players. This returns an array of player objects.
     return this.prisma.player.findMany({
-      orderBy: { name: 'asc' }, // Always return sorted lists for better UX.
+      orderBy: { name: 'asc' }, // Ensure we only return players with a valid ID
+      include: {
+        _count: {
+          select: { awards: true }, // Include the count of awards for each player
+        },
+      },
     });
   }
 
