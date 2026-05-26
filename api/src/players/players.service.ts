@@ -16,10 +16,12 @@ export class PlayersService {
   }
 
   async findAll() {
-    // Access the database to retrieve all players. This returns an array of player objects.
+    // WHY: Access the database to retrieve all players. Include the linked user account (if any)
+    // so the admin panel can dynamically check credentials and allow elevating roles (USER -> TREASURER -> ADMIN).
     return this.prisma.player.findMany({
-      orderBy: { name: 'asc' }, // Ensure we only return players with a valid ID
+      orderBy: { name: 'asc' },
       include: {
+        user: true,
         _count: {
           select: { mvpAwards: true }, // Include the count of awards for each player
         },
