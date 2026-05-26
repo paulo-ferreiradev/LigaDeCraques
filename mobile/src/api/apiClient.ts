@@ -15,7 +15,7 @@ const getBaseUrl = () => {
   }
 
   // WHY: Fallback production Render link, ensuring we avoid localhost in builds.
-  return 'https://liga-craques-api.onrender.com';
+  return 'https://tercas-fc-api.onrender.com';
 };
 
 const BASE_URL = getBaseUrl();
