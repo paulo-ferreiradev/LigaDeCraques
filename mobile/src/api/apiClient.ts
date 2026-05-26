@@ -2,10 +2,23 @@ import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
 
-// WHY: Android emulator connects to host via 10.0.2.2. iOS simulator uses localhost.
-// TIP: If debugging on a physical mobile device, replace this URL with your PC's local network IP (e.g. 'http://192.168.1.X:3000').
-const BASE_URL =
-  Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+// WHY: Dynamically resolves the backend API endpoint. We prioritize Expo's public env var,
+// fallback to a fixed production Render server in release builds, and fallback to local emulators in development.
+const getBaseUrl = () => {
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  if (__DEV__) {
+    // WHY: Android emulator connects to host via 10.0.2.2. iOS simulator uses localhost.
+    return Platform.OS === 'android' ? 'http://10.0.2.2:3000' : 'http://localhost:3000';
+  }
+
+  // WHY: Fallback production Render link, ensuring we avoid localhost in builds.
+  return 'https://liga-craques-api.onrender.com';
+};
+
+const BASE_URL = getBaseUrl();
 
 const apiClient = axios.create({
   baseURL: BASE_URL,

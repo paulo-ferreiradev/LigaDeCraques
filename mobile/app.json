@@ -1,11 +1,16 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Terças FC",
+    "slug": "tercas-fc",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0F172A"
+    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.liga.craques"
@@ -13,7 +18,7 @@
     "android": {
       "package": "com.liga.craques",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0F172A",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -26,10 +31,17 @@
     "plugins": [
       "expo-secure-store"
     ],
+    "updates": {
+      "url": "https://u.expo.dev/bc8f6d8d-7bb1-4639-b6ec-0ad5ba5f11dd"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "extra": {
       "eas": {
-        "projectId": "bc8f6d8d-7bb1-4639-b6ec-0ad5ba5f11dd"
+        "projectId": "1c74ba60-c820-417d-88c9-6366084d99d5"
       }
-    }
+    },
+    "owner": "paulo-ferreiradev"
   }
 }

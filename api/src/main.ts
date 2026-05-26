@@ -8,6 +8,8 @@ import { AppModule } from './app.module';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  app.enableCors();
+
   // This ensures all incoming requests are automatically validated
   // against the rules defined in our DTOs.
   app.useGlobalPipes(
@@ -18,6 +20,7 @@ async function bootstrap() {
     }),
   );
 
-  await app.listen(3000);
+  // WHY: Binds to dynamic PORT environment variable assigned by platforms like Render, falling back to 3000 for local development.
+  await app.listen(process.env.PORT || 3000);
 }
 bootstrap();
