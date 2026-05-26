@@ -11,6 +11,8 @@ import * as bcrypt from 'bcrypt';
 // WHY: Load environment variables directly in standalone ts-node execution context.
 dotenv.config({ path: resolve(process.cwd(), '.env') });
 
+import { randomUUID } from 'crypto';
+
 const connectionString = process.env.DATABASE_URL as string;
 const pool = new Pool({
   connectionString,
@@ -46,18 +48,30 @@ async function main() {
 
   // WHY: Salt and hash the production administrator password securely.
   const passwordHash = await bcrypt.hash(adminPassword, 10);
+  const adminId = randomUUID();
 
-  // WHY: Insert the single MASTER ADMIN account. This account has no linked player initially.
-  // The Admin can log in and use Swagger or future dashboards to create players and link themselves later.
-  const admin = await prisma.user.create({
-    data: {
-      email: adminEmail.trim().toLowerCase(),
-      passwordHash,
-      role: 'ADMIN',
-    },
+  // WHY: Atomically create the master Player profile and linked Admin User profile with the exact same UUID (Shared Identity Pattern).
+  await prisma.$transaction(async (tx) => {
+    await tx.player.create({
+      data: {
+        id: adminId,
+        name: 'Admin',
+        playerType: 'FIXED',
+      },
+    });
+
+    await tx.user.create({
+      data: {
+        id: adminId,
+        email: adminEmail.trim().toLowerCase(),
+        passwordHash,
+        role: 'ADMIN',
+        playerId: adminId,
+      },
+    });
   });
 
-  console.log(`\n[SUCCESS] Created production MASTER ADMIN user: ${admin.email}`);
+  console.log(`\n[SUCCESS] Created production MASTER ADMIN user and matching Player profile: ${adminEmail.trim().toLowerCase()}`);
   console.log('Your database is now clean, secured, and ready for production!');
 }
 
