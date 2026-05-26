@@ -53,14 +53,11 @@ export class SeasonsService {
   }
 
   async findActive() {
-    // WHY: Provides a quick query for mobile clients to retrieve the currently active season data.
-    const activeSeason = await this.prisma.season.findFirst({
+    // WHY: Returns the active season or null directly. This prevents 404 HTTP errors in the frontend
+    // when the database is empty or no season has been officially activated yet.
+    return this.prisma.season.findFirst({
       where: { status: 'ACTIVE' },
     });
-    if (!activeSeason) {
-      throw new NotFoundException('No active season found');
-    }
-    return activeSeason;
   }
 
   async update(id: string, updateSeasonDto: UpdateSeasonDto) {

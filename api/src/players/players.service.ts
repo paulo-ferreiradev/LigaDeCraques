@@ -28,12 +28,37 @@ export class PlayersService {
   }
 
   async findOne(id: string) {
-    // CHANGED: id is a String (UUID)
+    // WHY: Check if the player profile exists in the database.
     const player = await this.prisma.player.findUnique({
       where: { id },
     });
 
     if (!player) {
+      // WHY: Self-Healing Strategy. If the player profile is missing but a corresponding User is authentic and valid,
+      // we dynamically create the player profile on-the-fly to prevent rendering blocks on the client-side screens.
+      const linkedUser = await this.prisma.user.findUnique({
+        where: { id },
+      });
+
+      if (linkedUser) {
+        const defaultName = linkedUser.email.split('@')[0];
+        const newPlayer = await this.prisma.player.create({
+          data: {
+            id,
+            name: defaultName,
+            playerType: 'FIXED',
+          },
+        });
+
+        // WHY: Update the user model playerId reference to self-heal link consistency.
+        await this.prisma.user.update({
+          where: { id },
+          data: { playerId: id },
+        });
+
+        return newPlayer;
+      }
+
       throw new NotFoundException(`Player with ID ${id} not found`);
     }
 

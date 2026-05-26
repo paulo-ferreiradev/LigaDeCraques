@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -29,24 +30,25 @@ export class AuthService {
     const passwordHash = await bcrypt.hash(registerDto.password, 10);
 
     // WHY: Use a database transaction to ensure that the user and their player profile
-    // are created atomically. If either fails, the transaction is rolled back.
+    // are created atomically with the exact same UUID (Shared Identity Pattern).
     const result = await this.prisma.$transaction(async (tx) => {
-      let linkedPlayerId: string | null = null;
+      const entityId = randomUUID();
+      const defaultPlayerName = registerDto.playerName || registerDto.email.split('@')[0];
 
-      if (registerDto.playerName) {
-        const player = await tx.player.create({
-          data: {
-            name: registerDto.playerName,
-          },
-        });
-        linkedPlayerId = player.id;
-      }
+      // WHY: Automatically provision the Player profile first using the shared entity UUID.
+      const player = await tx.player.create({
+        data: {
+          id: entityId,
+          name: defaultPlayerName,
+        },
+      });
 
       const user = await tx.user.create({
         data: {
+          id: entityId,
           email: registerDto.email,
           passwordHash,
-          playerId: linkedPlayerId,
+          playerId: entityId,
         },
       });
 
