@@ -1,6 +1,6 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
 import { Platform } from 'react-native';
+import { tokenStorage } from '../utils/tokenStorage';
 
 // WHY: Dynamically resolves the backend API endpoint. We prioritize Expo's public env var,
 // fallback to a fixed production Render server in release builds, and fallback to local emulators in development.
@@ -28,10 +28,10 @@ const apiClient = axios.create({
 });
 
 // Request Interceptor
-// WHY: Automatically fetches the access token from hardware SecureStore and appends it to headers.
+// WHY: Automatically fetches the access token from hybrid tokenStorage and appends it to headers.
 apiClient.interceptors.request.use(
   async (config) => {
-    const token = await SecureStore.getItemAsync('accessToken');
+    const token = await tokenStorage.getItem('accessToken');
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -53,7 +53,7 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true;
 
       try {
-        const refreshToken = await SecureStore.getItemAsync('refreshToken');
+        const refreshToken = await tokenStorage.getItem('refreshToken');
         if (!refreshToken) {
           throw new Error('No refresh token found');
         }
@@ -72,15 +72,15 @@ apiClient.interceptors.response.use(
         const { accessToken: newAccessToken, refreshToken: newRefreshToken } =
           response.data;
 
-        await SecureStore.setItemAsync('accessToken', newAccessToken);
-        await SecureStore.setItemAsync('refreshToken', newRefreshToken);
+        await tokenStorage.setItem('accessToken', newAccessToken);
+        await tokenStorage.setItem('refreshToken', newRefreshToken);
 
         originalRequest.headers.Authorization = `Bearer ${newAccessToken}`;
         return apiClient(originalRequest);
       } catch (refreshError) {
         // WHY: If refresh token has also expired or is invalid, clear credentials immediately.
-        await SecureStore.deleteItemAsync('accessToken');
-        await SecureStore.deleteItemAsync('refreshToken');
+        await tokenStorage.removeItem('accessToken');
+        await tokenStorage.removeItem('refreshToken');
         return Promise.reject(refreshError);
       }
     }

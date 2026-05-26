@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { tokenStorage } from '../utils/tokenStorage';
 import apiClient, { BASE_URL } from '../api/apiClient';
 import axios from 'axios';
 
@@ -72,7 +72,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const checkActiveSession = async () => {
       try {
-        const accessToken = await SecureStore.getItemAsync('accessToken');
+        const accessToken = await tokenStorage.getItem('accessToken');
         if (accessToken) {
           const payload = parseJwt(accessToken);
           const currentTime = Date.now() / 1000;
@@ -87,14 +87,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             });
           } else {
             // Token expired on startup: Attempt background rotation using the refresh token
-            const refreshToken = await SecureStore.getItemAsync('refreshToken');
+            const refreshToken = await tokenStorage.getItem('refreshToken');
             if (refreshToken) {
               const response = await axios.post(`${BASE_URL}/auth/refresh`, {}, {
                 headers: { Authorization: `Bearer ${refreshToken}` },
               });
               const { accessToken: newAccess, refreshToken: newRefresh } = response.data;
-              await SecureStore.setItemAsync('accessToken', newAccess);
-              await SecureStore.setItemAsync('refreshToken', newRefresh);
+              await tokenStorage.setItem('accessToken', newAccess);
+              await tokenStorage.setItem('refreshToken', newRefresh);
               
               const newPayload = parseJwt(newAccess);
               setUser({
@@ -121,8 +121,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const response = await apiClient.post('/auth/login', { email, password });
     const { accessToken, refreshToken } = response.data;
 
-    await SecureStore.setItemAsync('accessToken', accessToken);
-    await SecureStore.setItemAsync('refreshToken', refreshToken);
+    await tokenStorage.setItem('accessToken', accessToken);
+    await tokenStorage.setItem('refreshToken', refreshToken);
 
     const payload = parseJwt(accessToken);
     setUser({
@@ -137,8 +137,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const response = await apiClient.post('/auth/register', { email, password, playerName });
     const { accessToken, refreshToken } = response.data;
 
-    await SecureStore.setItemAsync('accessToken', accessToken);
-    await SecureStore.setItemAsync('refreshToken', refreshToken);
+    await tokenStorage.setItem('accessToken', accessToken);
+    await tokenStorage.setItem('refreshToken', refreshToken);
 
     const payload = parseJwt(accessToken);
     setUser({
@@ -157,8 +157,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       console.log('Backend logout record expired or skipped:', e);
     } finally {
       // WHY: Always clear device tokens and memory context to prevent hijacking regardless of backend connectivity success.
-      await SecureStore.deleteItemAsync('accessToken');
-      await SecureStore.deleteItemAsync('refreshToken');
+      await tokenStorage.removeItem('accessToken');
+      await tokenStorage.removeItem('refreshToken');
       setUser(null);
     }
   };
