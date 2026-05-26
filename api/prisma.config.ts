@@ -13,4 +13,7 @@ export default defineConfig({
   datasource: {
     url: databaseUrl,
   },
+  migrations: {
+    seed: 'ts-node ./prisma/seed.ts',
+  },
 });

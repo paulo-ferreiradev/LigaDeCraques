@@ -23,10 +23,11 @@ model User {
 }
 
 model Player {
-  id        String   @id @default(uuid())
-  name      String
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  name       String
+  playerType String   @default("FIXED") // 'FIXED', 'GUEST'
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   // Relations
   // Disambiguated implicit Many-to-Many relations for Team A and Team B
@@ -41,6 +42,16 @@ model Player {
 
   // One-to-One: A player can have a user account
   user User?
+
+  // Relations to MVP Votes
+  mvpVotesCast     MvpVote[] @relation("VoterRelation")
+  mvpVotesReceived MvpVote[] @relation("CandidateRelation")
+
+  // Relations to RSVPs (Convocatórias)
+  rsvps Rsvp[]
+
+  // Relations to championships won
+  championshipsWon Season[] @relation("SeasonChampion")
 }
 
 model Season {
@@ -53,6 +64,10 @@ model Season {
 
   // Relations
   matches Match[]
+
+  // Relations for Season Champion
+  championId String?
+  champion   Player? @relation("SeasonChampion", fields: [championId], references: [id])
 }
 
 model Match {
@@ -76,6 +91,12 @@ model Match {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // Relation to MVP Votes
+  mvpVotes MvpVote[]
+
+  rsvpDeadline DateTime?
+  rsvps        Rsvp[]
 }
 
 model Payment {
@@ -90,4 +111,30 @@ model Payment {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime? // WHY: Soft delete to preserve financial history and guarantee append-only ledger
+}
+
+model MvpVote {
+  id          String   @id @default(uuid())
+  matchId     String
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  voterId     String   // Player ID of the voter
+  voter       Player   @relation("VoterRelation", fields: [voterId], references: [id], onDelete: Cascade)
+  candidateId String   // Player ID of the candidate voted for
+  candidate   Player   @relation("CandidateRelation", fields: [candidateId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+
+  @@unique([matchId, voterId]) // WHY: Ensure a participant can cast exactly one vote per match.
+}
+
+model Rsvp {
+  id        String   @id @default(uuid())
+  matchId   String
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  status    String   @default("PENDING") // 'PENDING', 'CONFIRMED', 'DECLINED'
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([matchId, playerId]) // WHY: Ensure exactly one RSVP record per player per match.
 }

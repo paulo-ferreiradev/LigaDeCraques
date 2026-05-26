@@ -12,8 +12,14 @@ export class PrismaService
 {
   constructor() {
     // 1. We create a "Pool" (a group of connections) with the pg library
+    // WHY: Configure SSL options to bypass self-signed certificate constraints when connecting to hosted DBs like Supabase.
     const connectionString = process.env.DATABASE_URL as string;
-    const pool = new Pool({ connectionString });
+    const pool = new Pool({
+      connectionString,
+      ssl: {
+        rejectUnauthorized: false,
+      },
+    });
 
     // 2. We put the Pool inside the Prisma 7 Adapter
     const adapter = new PrismaPg(pool);

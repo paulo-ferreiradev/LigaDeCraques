@@ -13,10 +13,9 @@ export class RegisterDto {
   @MinLength(6)
   password: string;
 
-  // WHY: Allows optionally linking this user account to a specific player profile
-  // at registration time (e.g., if an Admin is creating accounts for existing players).
-  @ApiPropertyOptional({ example: 'uuid-of-a-player' })
+  // WHY: Allows creating and linking a player profile with the user's name during registration.
+  @ApiPropertyOptional({ example: 'Paulo Ferreira' })
   @IsOptional()
-  @IsUUID()
-  playerId?: string;
+  @IsString()
+  playerName?: string;
 }

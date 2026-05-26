@@ -12,7 +12,7 @@ import { LoginDto } from './dto/login.dto';
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly prisma: any, // TEMP: Unblock TS error for .user property
+    private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
   ) {}
 
@@ -28,20 +28,38 @@ export class AuthService {
     // WHY: Always salt and hash passwords before persistence. Cost factor of 10 is standard.
     const passwordHash = await bcrypt.hash(registerDto.password, 10);
 
-    const newUser = await this.prisma.user.create({
-      data: {
-        email: registerDto.email,
-        passwordHash,
-        playerId: registerDto.playerId,
-      },
+    // WHY: Use a database transaction to ensure that the user and their player profile
+    // are created atomically. If either fails, the transaction is rolled back.
+    const result = await this.prisma.$transaction(async (tx) => {
+      let linkedPlayerId: string | null = null;
+
+      if (registerDto.playerName) {
+        const player = await tx.player.create({
+          data: {
+            name: registerDto.playerName,
+          },
+        });
+        linkedPlayerId = player.id;
+      }
+
+      const user = await tx.user.create({
+        data: {
+          email: registerDto.email,
+          passwordHash,
+          playerId: linkedPlayerId,
+        },
+      });
+
+      return user;
     });
 
     const tokens = await this.getTokens(
-      newUser.id,
-      newUser.email,
-      newUser.role,
+      result.id,
+      result.email,
+      result.role,
+      result.playerId,
     );
-    await this.updateRefreshTokenHash(newUser.id, tokens.refreshToken);
+    await this.updateRefreshTokenHash(result.id, tokens.refreshToken);
 
     return tokens;
   }
@@ -63,7 +81,7 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    const tokens = await this.getTokens(user.id, user.email, user.role);
+    const tokens = await this.getTokens(user.id, user.email, user.role, user.playerId);
     await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
 
     return tokens;
@@ -82,6 +100,33 @@ export class AuthService {
     });
   }
 
+  async refreshTokens(userId: string, refreshToken: string) {
+    // WHY: Find user by ID to assert existence and retrieve the current hashed refresh token.
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    // WHY: Deny access if the user record does not exist or if the user is already logged out (hashedRefreshToken is null).
+    if (!user || !user.hashedRefreshToken) {
+      throw new UnauthorizedException('Access Denied');
+    }
+
+    // WHY: Compare raw refresh token with database hash to verify identity.
+    const refreshTokenMatches = await bcrypt.compare(
+      refreshToken,
+      user.hashedRefreshToken,
+    );
+    if (!refreshTokenMatches) {
+      throw new UnauthorizedException('Access Denied');
+    }
+
+    // WHY: Generate a fresh set of tokens and rotate/hash the new refresh token in the database.
+    const tokens = await this.getTokens(user.id, user.email, user.role, user.playerId);
+    await this.updateRefreshTokenHash(user.id, tokens.refreshToken);
+
+    return tokens;
+  }
+
   // --- Private Helper Methods ---
 
   private async updateRefreshTokenHash(userId: string, refreshToken: string) {
@@ -94,8 +139,14 @@ export class AuthService {
     });
   }
 
-  private async getTokens(userId: string, email: string, role: string) {
-    const jwtPayload = { sub: userId, email, role };
+  private async getTokens(
+    userId: string,
+    email: string,
+    role: string,
+    playerId: string | null,
+  ) {
+    // WHY: Including playerId in the JWT payload eliminates extra API requests for fetching basic player context upon login.
+    const jwtPayload = { sub: userId, email, role, playerId };
 
     // WHY: Dual-token strategy. Short-lived access token minimizes damage if intercepted.
     // Long-lived refresh token keeps mobile users logged in without frustrating UX.

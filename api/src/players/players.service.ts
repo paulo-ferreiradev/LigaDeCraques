@@ -21,7 +21,7 @@ export class PlayersService {
       orderBy: { name: 'asc' }, // Ensure we only return players with a valid ID
       include: {
         _count: {
-          select: { awards: true }, // Include the count of awards for each player
+          select: { mvpAwards: true }, // Include the count of awards for each player
         },
       },
     });
@@ -44,9 +44,27 @@ export class PlayersService {
     // Ensure the player exists before attempting update.
     await this.findOne(id);
 
+    const { role, ...playerData } = updatePlayerDto;
+
+    // WHY: If role property is supplied, propagate the update to the linked User model.
+    if (role) {
+      const linkedUser = await this.prisma.user.findUnique({
+        where: { playerId: id },
+      });
+      if (linkedUser) {
+        await this.prisma.user.update({
+          where: { id: linkedUser.id },
+          data: { role },
+        });
+      }
+    }
+
     return this.prisma.player.update({
       where: { id },
-      data: updatePlayerDto,
+      data: playerData,
+      include: {
+        user: true, // WHY: Fetch user relation so frontend displays system role badge instantly
+      },
     });
   }
 
