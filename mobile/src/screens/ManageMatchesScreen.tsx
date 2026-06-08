@@ -194,6 +194,29 @@ const ManageMatchesScreen = () => {
     }
   };
 
+  const handleDeleteMatch = (match: Match) => {
+    Alert.alert(
+      'Cancelar Jogo',
+      `Tens a certeza que queres apagar este jogo agendado? Esta ação não pode ser desfeita.`,
+      [
+        { text: 'Não', style: 'cancel' },
+        {
+          text: 'Apagar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiClient.delete(`/matches/${match.id}`);
+              if (selectedMatch?.id === match.id) setSelectedMatch(null);
+              loadData();
+            } catch (e: any) {
+              Alert.alert('Erro', e.response?.data?.message || 'Não foi possível apagar o jogo.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const handleForceFinalize = async () => {
     if (!selectedMatch) return;
 
@@ -295,20 +318,26 @@ const ManageMatchesScreen = () => {
               <Text style={styles.subHeader}>SCHEDULED MATCHES</Text>
               <View style={styles.matchesList}>
                 {scheduledMatches.map((item) => (
-                  <TouchableOpacity
+                  <View
                     key={item.id}
                     style={[
                       styles.matchSelectItem,
                       selectedMatch?.id === item.id && styles.matchSelectItemActive,
                     ]}
-                    onPress={() => handleSelectMatch(item)}
                   >
-                    <Ionicons name="football" size={16} color="#3B82F6" />
-                    <Text style={styles.matchSelectText}>
-                      Match in {item.season.year} {item.season.seasonType} ({item.teamAPlayers.length} vs{' '}
-                      {item.teamBPlayers.length} players)
-                    </Text>
-                  </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.matchSelectContent}
+                      onPress={() => handleSelectMatch(item)}
+                    >
+                      <Ionicons name="football" size={16} color="#3B82F6" />
+                      <Text style={styles.matchSelectText}>
+                        {new Date(item.playedAt).toLocaleDateString('pt-PT', { weekday: 'short', day: '2-digit', month: '2-digit' })} — {item.season.year} {item.season.seasonType} ({item.teamAPlayers.length} vs {item.teamBPlayers.length})
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={() => handleDeleteMatch(item)} style={styles.matchDeleteBtn}>
+                      <Ionicons name="trash-outline" size={16} color="#EF4444" />
+                    </TouchableOpacity>
+                  </View>
                 ))}
               </View>
             </>
@@ -527,10 +556,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#0F172A',
     borderRadius: 8,
-    padding: 12,
     borderWidth: 1,
     borderColor: '#334155',
     marginTop: 8,
+    overflow: 'hidden',
+  },
+  matchSelectContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+  },
+  matchDeleteBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 12,
   },
   matchSelectItemActive: {
     borderColor: '#3B82F6',
@@ -540,6 +579,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginLeft: 10,
     fontWeight: '500',
+    flexShrink: 1,
   },
   sectionTitle: {
     color: '#FFFFFF',

@@ -12,7 +12,7 @@ type AlertButton = {
 const Alert = {
   alert(title?: string, message?: string, buttons?: AlertButton[]) {
     if (Platform.OS !== 'web') {
-      NativeAlert.alert(title, message, buttons);
+      NativeAlert.alert(title ?? '', message, buttons);
       return;
     }
 
