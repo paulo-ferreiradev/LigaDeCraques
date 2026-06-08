@@ -27,15 +27,23 @@ export class MatchesService {
       throw new NotFoundException(`Season with ID ${createMatchDto.seasonId} not found`);
     }
 
-    const baseDate = createMatchDto.playedAt ? new Date(createMatchDto.playedAt) : new Date();
+    let playedAt: Date;
+    let rsvpDeadline: Date;
 
-    // Set kickoff playedAt to 22:30:00 of that day
-    const playedAt = new Date(baseDate);
-    playedAt.setHours(22, 30, 0, 0);
-
-    // Set RSVP deadline to 20:00:00 of the exact same day
-    const rsvpDeadline = new Date(baseDate);
-    rsvpDeadline.setHours(20, 0, 0, 0);
+    if (createMatchDto.playedAt) {
+      // Admin supplied an explicit date — honour it and set kickoff/deadline in Portugal local time.
+      const baseDate = new Date(createMatchDto.playedAt);
+      const offset = this.getPortugalUtcOffsetHours(baseDate);
+      playedAt = new Date(baseDate);
+      playedAt.setUTCHours(22 - offset, 30, 0, 0);
+      rsvpDeadline = new Date(baseDate);
+      rsvpDeadline.setUTCHours(20 - offset, 0, 0, 0);
+    } else {
+      // WHY: Default to the next Tuesday (Terças FC game day) at Portugal local times:
+      // kickoff 22:30, RSVP deadline 20:00. If today is Tuesday but past 20:00 Portugal
+      // time the deadline would already be expired, so skip to next week in that case.
+      ({ playedAt, rsvpDeadline } = this.getNextTuesdaySchedule());
+    }
 
     // Create the Match
     const match = await this.prisma.match.create({
@@ -516,6 +524,43 @@ export class MatchesService {
         player: true,
       },
     });
+  }
+
+  // WHY: Portugal uses WEST (UTC+1) from last Sunday of March to last Sunday of October,
+  // and WET (UTC+0) the rest of the year. Month range 3–9 (Apr–Oct) is a safe approximation.
+  private getPortugalUtcOffsetHours(date: Date): number {
+    const month = date.getUTCMonth(); // 0 = Jan
+    return month >= 3 && month <= 9 ? 1 : 0;
+  }
+
+  private getNextTuesdaySchedule(): { playedAt: Date; rsvpDeadline: Date } {
+    const now = new Date();
+    const offset = this.getPortugalUtcOffsetHours(now);
+
+    // Shift current time into Portugal local space so day-of-week is correct.
+    const localNow = new Date(now.getTime() + offset * 3600 * 1000);
+    const dayOfWeek = localNow.getUTCDay(); // 0 = Sunday, 2 = Tuesday
+
+    let daysUntilTuesday = (2 - dayOfWeek + 7) % 7;
+    if (daysUntilTuesday === 0) {
+      // Today is Tuesday — only use it if we're before the 20:00 RSVP deadline.
+      const h = localNow.getUTCHours();
+      const m = localNow.getUTCMinutes();
+      if (h > 20 || (h === 20 && m >= 0)) {
+        daysUntilTuesday = 7;
+      }
+    }
+
+    const tuesdayLocal = new Date(localNow);
+    tuesdayLocal.setUTCDate(tuesdayLocal.getUTCDate() + daysUntilTuesday);
+
+    const playedAt = new Date(tuesdayLocal);
+    playedAt.setUTCHours(22 - offset, 30, 0, 0);
+
+    const rsvpDeadline = new Date(tuesdayLocal);
+    rsvpDeadline.setUTCHours(20 - offset, 0, 0, 0);
+
+    return { playedAt, rsvpDeadline };
   }
 
   async remove(id: string) {
