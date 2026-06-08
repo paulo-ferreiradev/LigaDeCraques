@@ -140,11 +140,12 @@ export class PlayersService {
     });
   }
 
-  // WHY: Counts only match-related history (participations, MVP awards/votes, RSVPs,
-  // championships). Payments are excluded because they are auto-generated and should
-  // not block admin cleanup of test/ghost profiles.
+  // WHY: Only counts irreplaceable match history: games actually played, MVP awards/votes,
+  // and championship titles. Payments and RSVPs are excluded — payments are auto-generated
+  // and RSVPs have onDelete:Cascade so they are wiped automatically when the player is
+  // deleted. Blocking on either of those would prevent cleaning up test/ghost profiles.
   private async countMatchHistory(id: string) {
-    const [matches, mvpAwards, mvpVotesCast, mvpVotesReceived, rsvps, championships] =
+    const [matches, mvpAwards, mvpVotesCast, mvpVotesReceived, championships] =
       await Promise.all([
         this.prisma.match.count({
           where: { OR: [{ teamAPlayers: { some: { id } } }, { teamBPlayers: { some: { id } } }] },
@@ -152,11 +153,10 @@ export class PlayersService {
         this.prisma.match.count({ where: { mvpId: id } }),
         this.prisma.mvpVote.count({ where: { voterId: id } }),
         this.prisma.mvpVote.count({ where: { candidateId: id } }),
-        this.prisma.rsvp.count({ where: { playerId: id } }),
         this.prisma.season.count({ where: { championId: id } }),
       ]);
 
-    return matches + mvpAwards + mvpVotesCast + mvpVotesReceived + rsvps + championships;
+    return matches + mvpAwards + mvpVotesCast + mvpVotesReceived + championships;
   }
 
   // WHY: Lets an admin associate a freshly registered account with a pre-existing "ghost"
