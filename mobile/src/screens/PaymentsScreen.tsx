@@ -8,12 +8,12 @@ import {
   RefreshControl,
   TouchableOpacity,
   SafeAreaView,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import apiClient from '../api/apiClient';
+import Alert from '../utils/alert';
 
 interface Payment {
   id: string;

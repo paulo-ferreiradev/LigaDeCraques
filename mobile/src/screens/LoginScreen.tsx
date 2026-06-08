@@ -9,9 +9,9 @@ import {
   KeyboardAvoidingView,
   Platform,
   ScrollView,
-  Alert,
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
+import Alert from '../utils/alert';
 
 const LoginScreen = ({ navigation }: any) => {
   const [email, setEmail] = useState('');

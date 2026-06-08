@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import apiClient from '../api/apiClient';
+import Alert from '../utils/alert';
 
 interface Season {
   id: string;

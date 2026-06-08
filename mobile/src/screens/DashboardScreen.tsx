@@ -8,12 +8,12 @@ import {
   RefreshControl,
   SafeAreaView,
   TouchableOpacity,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import apiClient from '../api/apiClient';
 import { useAuth } from '../context/AuthContext';
+import Alert from '../utils/alert';
 
 interface PlayerStanding {
   playerId: string;

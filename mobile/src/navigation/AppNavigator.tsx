@@ -4,6 +4,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { ActivityIndicator, View, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons'; // WHY: Built-in in Expo, zero configuration needed.
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 
 // Import Screens
@@ -73,6 +74,7 @@ const AuthNavigator = () => (
 // WHY: MainTabNavigator houses protected screens with a sleek dark aesthetic.
 const MainTabNavigator = () => {
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tab.Navigator
@@ -99,9 +101,11 @@ const MainTabNavigator = () => {
         tabBarStyle: {
           backgroundColor: '#111827', // Pitch dark background
           borderTopColor: '#374151',
-          paddingBottom: 5,
+          // WHY: Add the device's bottom safe-area inset (Android nav bar / iOS home
+          // indicator / mobile browser system bar) so it never overlaps the tab icons.
+          paddingBottom: 5 + insets.bottom,
           paddingTop: 5,
-          height: 60,
+          height: 60 + insets.bottom,
         },
         headerStyle: {
           backgroundColor: '#111827',
