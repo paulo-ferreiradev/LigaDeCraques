@@ -121,36 +121,34 @@ export class PlayersService {
       );
     }
 
-    try {
-      return await this.prisma.player.delete({
-        where: { id },
-      });
-    } catch (error) {
-      // WHY: Postgres rejects the delete with P2003 when the player still has matches,
-      // payments, MVP awards/votes or RSVPs pointing at it. Surface a clear, friendly
-      // message instead of a raw FK violation so historical standings stay intact.
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2003'
-      ) {
-        throw new ConflictException(
-          'Não é possível eliminar este jogador porque já tem partidas, pagamentos ou prémios associados. Para preservar o histórico e as classificações, este perfil não pode ser apagado.',
-        );
-      }
-      throw error;
+    // WHY: Only block on actual match history (games played, MVP awards/votes, RSVPs,
+    // championship titles). Auto-generated payment records alone are administrative
+    // noise and must not prevent the admin from cleaning up test or ghost profiles —
+    // those payments are deleted as part of the transaction below.
+    const matchHistory = await this.countMatchHistory(id);
+    if (matchHistory > 0) {
+      throw new ConflictException(
+        'Não é possível eliminar este jogador porque já participou em partidas ou recebeu prémios. Para preservar o histórico e as classificações, este perfil não pode ser apagado.',
+      );
     }
+
+    // WHY: Payments are auto-generated for every FIXED player at season start and do not
+    // represent irreplaceable data on their own. Delete them first so the player FK is free.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.payment.deleteMany({ where: { playerId: id } });
+      return tx.player.delete({ where: { id } });
+    });
   }
 
-  // WHY: Counts every relation that would block a hard delete, so we can decide whether
-  // a "ghost" duplicate profile (created automatically at registration) is safe to discard
-  // when merging it into a pre-existing player profile.
-  private async countPlayerHistory(id: string) {
-    const [matches, payments, mvpAwards, mvpVotesCast, mvpVotesReceived, rsvps, championships] =
+  // WHY: Counts only match-related history (participations, MVP awards/votes, RSVPs,
+  // championships). Payments are excluded because they are auto-generated and should
+  // not block admin cleanup of test/ghost profiles.
+  private async countMatchHistory(id: string) {
+    const [matches, mvpAwards, mvpVotesCast, mvpVotesReceived, rsvps, championships] =
       await Promise.all([
         this.prisma.match.count({
           where: { OR: [{ teamAPlayers: { some: { id } } }, { teamBPlayers: { some: { id } } }] },
         }),
-        this.prisma.payment.count({ where: { playerId: id } }),
         this.prisma.match.count({ where: { mvpId: id } }),
         this.prisma.mvpVote.count({ where: { voterId: id } }),
         this.prisma.mvpVote.count({ where: { candidateId: id } }),
@@ -158,9 +156,7 @@ export class PlayersService {
         this.prisma.season.count({ where: { championId: id } }),
       ]);
 
-    return (
-      matches + payments + mvpAwards + mvpVotesCast + mvpVotesReceived + rsvps + championships
-    );
+    return matches + mvpAwards + mvpVotesCast + mvpVotesReceived + rsvps + championships;
   }
 
   // WHY: Lets an admin associate a freshly registered account with a pre-existing "ghost"
@@ -197,10 +193,10 @@ export class PlayersService {
     const previousPlayerId = user.playerId;
 
     if (previousPlayerId) {
-      const historyCount = await this.countPlayerHistory(previousPlayerId);
+      const historyCount = await this.countMatchHistory(previousPlayerId);
       if (historyCount > 0) {
         throw new ConflictException(
-          'Não é possível associar: esta conta já tem um perfil de jogador com histórico de partidas, pagamentos ou prémios. Associe contas apenas antes de a pessoa ter participado em jogos.',
+          'Não é possível associar: esta conta já tem um perfil de jogador com histórico de partidas ou prémios. Associe contas apenas antes de a pessoa ter participado em jogos.',
         );
       }
     }
@@ -211,9 +207,10 @@ export class PlayersService {
         data: { playerId: targetPlayerId },
       });
 
-      // WHY: Discard the empty duplicate profile created automatically at registration,
-      // now that the account points to the pre-existing profile with the real history.
+      // WHY: Discard the empty duplicate profile created at registration.
+      // Delete auto-generated payments first so the FK is free to cascade.
       if (previousPlayerId && previousPlayerId !== targetPlayerId) {
+        await tx.payment.deleteMany({ where: { playerId: previousPlayerId } });
         await tx.player.delete({ where: { id: previousPlayerId } });
       }
 
