@@ -112,19 +112,8 @@ export class PlayersService {
       throw new NotFoundException(`Player with ID ${id} not found`);
     }
 
-    // WHY: A linked user account references this player via a FK with no cascade —
-    // deleting it would dangle that account. Block with a message that points at the
-    // actual cause rather than the generic "has history" one below.
-    if (player.user) {
-      throw new ConflictException(
-        'Não é possível eliminar este jogador porque tem uma conta de utilizador associada. Para apagar este perfil, primeiro associe a conta a outro jogador ou remova a conta de utilizador.',
-      );
-    }
-
-    // WHY: Only block on actual match history (games played, MVP awards/votes, RSVPs,
-    // championship titles). Auto-generated payment records alone are administrative
-    // noise and must not prevent the admin from cleaning up test or ghost profiles —
-    // those payments are deleted as part of the transaction below.
+    // WHY: Block on actual match history first regardless of whether a user is linked.
+    // Payments and RSVPs are excluded — they are administrative noise / cascade automatically.
     const matchHistory = await this.countMatchHistory(id);
     if (matchHistory > 0) {
       throw new ConflictException(
@@ -132,9 +121,13 @@ export class PlayersService {
       );
     }
 
-    // WHY: Payments are auto-generated for every FIXED player at season start and do not
-    // represent irreplaceable data on their own. Delete them first so the player FK is free.
+    // WHY: If the player has no match history but has a linked user account, we can safely
+    // delete both together — this covers test/ghost accounts where the user registered but
+    // never played. The user FK must be removed before the player row can be deleted.
     return this.prisma.$transaction(async (tx) => {
+      if (player.user) {
+        await tx.user.delete({ where: { id: player.user.id } });
+      }
       await tx.payment.deleteMany({ where: { playerId: id } });
       return tx.player.delete({ where: { id } });
     });
