@@ -40,6 +40,13 @@ const ManagePlayersScreen = ({ navigation }: any) => {
   const [editPlayerType, setEditPlayerType] = useState('FIXED');
   const [editRole, setEditRole] = useState('USER');
 
+  // Link-to-existing-account State (for "ghost" profiles with no user yet)
+  const [linkEmail, setLinkEmail] = useState('');
+  const [isLinking, setIsLinking] = useState(false);
+
+  // Per-row deletion spinner
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
   const fetchPlayers = useCallback(async () => {
     setIsLoadingPlayers(true);
     try {
@@ -82,6 +89,7 @@ const ManagePlayersScreen = ({ navigation }: any) => {
     setEditName(player.name);
     setEditPlayerType(player.playerType || 'FIXED');
     setEditRole(player.user?.role || 'USER');
+    setLinkEmail('');
   };
 
   const handleSaveEdit = async () => {
@@ -108,6 +116,60 @@ const ManagePlayersScreen = ({ navigation }: any) => {
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  // WHY: Lets an admin attach a freshly-registered account (by email) to a pre-existing
+  // "ghost" profile they created in advance, so that person's match history/points carry
+  // over instead of starting from a brand-new, empty duplicate profile.
+  const handleLinkUser = async () => {
+    if (!editingPlayer) return;
+    const email = linkEmail.trim();
+    if (!email) {
+      Alert.alert('Validation Error', 'Enter the email the person used to register.');
+      return;
+    }
+
+    setIsLinking(true);
+    try {
+      await apiClient.post(`/players/${editingPlayer.id}/link-user`, { email });
+      Alert.alert('Success', `Account '${email}' is now linked to '${editingPlayer.name}'. Their history and points will count under this profile.`);
+      setEditingPlayer(null);
+      setLinkEmail('');
+      fetchPlayers();
+    } catch (e: any) {
+      console.log('Error linking user to player:', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to link this account to the player profile.');
+    } finally {
+      setIsLinking(false);
+    }
+  };
+
+  const handleDeletePlayer = (player: Player) => {
+    Alert.alert(
+      'Delete Player',
+      `Are you sure you want to permanently delete '${player.name}'? This cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            setDeletingId(player.id);
+            try {
+              await apiClient.delete(`/players/${player.id}`);
+              Alert.alert('Success', `Player '${player.name}' was deleted.`);
+              if (editingPlayer?.id === player.id) setEditingPlayer(null);
+              fetchPlayers();
+            } catch (e: any) {
+              console.log('Error deleting player:', e);
+              Alert.alert('Cannot Delete Player', e.response?.data?.message || 'Failed to delete player.');
+            } finally {
+              setDeletingId(null);
+            }
+          },
+        },
+      ],
+    );
   };
 
   const renderPlayerItem = ({ item }: { item: Player }) => {
@@ -148,9 +210,22 @@ const ManagePlayersScreen = ({ navigation }: any) => {
           {hasAccount && <Text style={styles.playerEmailText}>{item.user?.email}</Text>}
         </View>
 
-        <TouchableOpacity style={styles.editBtn} onPress={() => handleStartEdit(item)}>
-          <Ionicons name="create-outline" size={16} color="#FFFFFF" />
-        </TouchableOpacity>
+        <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.editBtn} onPress={() => handleStartEdit(item)}>
+            <Ionicons name="create-outline" size={16} color="#FFFFFF" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.deleteBtn, deletingId === item.id && styles.deleteBtnDisabled]}
+            onPress={() => handleDeletePlayer(item)}
+            disabled={deletingId === item.id}
+          >
+            {deletingId === item.id ? (
+              <ActivityIndicator color="#EF4444" size="small" />
+            ) : (
+              <Ionicons name="trash-outline" size={16} color="#EF4444" />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
     );
   };
@@ -231,9 +306,46 @@ const ManagePlayersScreen = ({ navigation }: any) => {
                       </View>
                     </>
                   ) : (
-                    <Text style={styles.roleNoticeText}>
-                      No user account linked to this profile. Access role can only be assigned once they sign up.
-                    </Text>
+                    <>
+                      <Text style={styles.roleNoticeText}>
+                        No user account linked to this profile. Access role can only be assigned once they sign up.
+                      </Text>
+
+                      {/* WHY: Lets the admin attach a person who already registered (and got a
+                          brand-new, empty duplicate profile) to this pre-existing profile, so
+                          their match history and points carry over instead of starting at zero. */}
+                      <View style={styles.linkSection}>
+                        <View style={styles.linkSectionHeader}>
+                          <Ionicons name="link-outline" size={16} color="#3B82F6" />
+                          <Text style={styles.linkSectionTitle}>Link to a Registered Account</Text>
+                        </View>
+                        <Text style={styles.linkSectionDesc}>
+                          Did this person already sign up under a new profile? Enter the email they
+                          used to register and their account will be attached to this profile —
+                          carrying over its history and points, and the empty duplicate is removed.
+                        </Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="person@example.com"
+                          placeholderTextColor="#6B7280"
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          value={linkEmail}
+                          onChangeText={setLinkEmail}
+                        />
+                        <TouchableOpacity
+                          style={styles.linkBtn}
+                          onPress={handleLinkUser}
+                          disabled={isLinking}
+                        >
+                          {isLinking ? (
+                            <ActivityIndicator color="#FFFFFF" size="small" />
+                          ) : (
+                            <Text style={styles.linkBtnText}>Link Account to This Profile</Text>
+                          )}
+                        </TouchableOpacity>
+                      </View>
+                    </>
                   )}
 
                   {/* Action Buttons */}
@@ -511,6 +623,9 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 4,
   },
+  cardActions: {
+    flexDirection: 'row',
+  },
   editBtn: {
     backgroundColor: '#334155',
     width: 32,
@@ -520,6 +635,57 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#475569',
+  },
+  deleteBtn: {
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    marginLeft: 8,
+  },
+  deleteBtnDisabled: {
+    opacity: 0.5,
+  },
+  linkSection: {
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#3B82F6',
+    padding: 14,
+    marginBottom: 16,
+  },
+  linkSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  linkSectionTitle: {
+    color: '#3B82F6',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  linkSectionDesc: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  linkBtn: {
+    backgroundColor: '#3B82F6',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  linkBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
   emptyContainer: {
     alignItems: 'center',

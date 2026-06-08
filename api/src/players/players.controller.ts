@@ -14,6 +14,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PlayersService } from './players.service';
 import { CreatePlayerDto } from './dto/create-player.dto';
 import { UpdatePlayerDto } from './dto/update-player.dto';
+import { LinkUserDto } from './dto/link-user.dto';
 import { AccessTokenGuard } from '../auth/guards/accessToken.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
@@ -67,5 +68,17 @@ export class PlayersController {
   @ApiOperation({ summary: 'Delete a player (Admin only)' })
   remove(@Param('id') id: string) {
     return this.playersService.remove(id);
+  }
+
+  @Post(':id/link-user')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary:
+      'Associate a registered user account (by email) with this pre-existing player profile, discarding the duplicate created at registration (Admin only)',
+  })
+  linkUser(@Param('id') id: string, @Body() linkUserDto: LinkUserDto) {
+    return this.playersService.linkUser(id, linkUserDto);
   }
 }
