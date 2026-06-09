@@ -1,4 +1,3 @@
-// WHY: We use Prisma as our ORM to guarantee type safety and prevent SQL injections.
 generator client {
   provider = "prisma-client-js"
 }
@@ -8,133 +7,118 @@ datasource db {
 }
 
 model User {
-  id                 String  @id @default(uuid())
-  email              String  @unique
+  id                 String   @id @default(uuid())
+  email              String   @unique
   passwordHash       String
-  role               String  @default("USER") // e.g., 'ADMIN', 'TREASURER', 'USER'
+  role               String   @default("USER")
   hashedRefreshToken String?
-
-  // WHY: Optional 1-to-1 relation. A user might be a player, or just a system admin/treasurer.
-  playerId String? @unique
-  player   Player? @relation(fields: [playerId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  playerId           String?  @unique
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  player             Player?  @relation(fields: [playerId], references: [id])
 }
 
 model Player {
-  id         String   @id @default(uuid())
-  name       String
-  playerType String   @default("FIXED") // 'FIXED', 'GUEST'
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  // Relations
-  // Disambiguated implicit Many-to-Many relations for Team A and Team B
-  teamAMatches Match[] @relation("TeamAMatches")
-  teamBMatches Match[] @relation("TeamBMatches")
-
-  // One-to-Many: A player can be MVP in multiple matches
-  mvpAwards Match[] @relation("MatchMVP")
-
-  // One-to-Many: Financial contributions
-  payments Payment[]
-
-  // One-to-One: A player can have a user account
-  user User?
-
-  // Relations to MVP Votes
-  mvpVotesCast     MvpVote[] @relation("VoterRelation")
+  id               String    @id @default(uuid())
+  name             String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  playerType       String    @default("FIXED")
+  mvpAwards        Match[]   @relation("MatchMVP")
   mvpVotesReceived MvpVote[] @relation("CandidateRelation")
-
-  // Relations to RSVPs (Convocatórias)
-  rsvps Rsvp[]
-
-  // Relations to championships won
-  championshipsWon Season[] @relation("SeasonChampion")
+  mvpVotesCast     MvpVote[] @relation("VoterRelation")
+  payments         Payment[]
+  rsvps            Rsvp[]
+  championshipsWon Season[]  @relation("SeasonChampion")
+  user             User?
+  teamAMatches     Match[]   @relation("TeamAMatches")
+  teamBMatches     Match[]   @relation("TeamBMatches")
+  awards           Award[]
 }
 
 model Season {
   id         String   @id @default(uuid())
   year       Int
-  seasonType String // e.g., 'WINTER', 'SUMMER'
-  status     String // e.g., 'ACTIVE', 'FINISHED'
+  seasonType String
+  status     String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-
-  // Relations
-  matches Match[]
-
-  // Relations for Season Champion
   championId String?
-  champion   Player? @relation("SeasonChampion", fields: [championId], references: [id])
+  matches    Match[]
+  champion   Player?  @relation("SeasonChampion", fields: [championId], references: [id])
+  awards     Award[]
 }
 
 model Match {
-  id       String   @id @default(uuid())
-  seasonId String
-  season   Season   @relation(fields: [seasonId], references: [id])
-  playedAt DateTime @default(now())
-  status   String   @default("SCHEDULED") // e.g., 'SCHEDULED', 'COMPLETED'
-
-  // Match result (null until Admin inputs the score)
-  teamAScore Int?
-  teamBScore Int?
-
-  // Explicit assignment to Team A and Team B via implicit M2M tables
-  teamAPlayers Player[] @relation("TeamAMatches")
-  teamBPlayers Player[] @relation("TeamBMatches")
-
-  // MVP is awarded after the match concludes
-  mvpId String?
-  mvp   Player? @relation("MatchMVP", fields: [mvpId], references: [id])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // Relation to MVP Votes
-  mvpVotes MvpVote[]
-
+  id           String    @id @default(uuid())
+  seasonId     String
+  playedAt     DateTime  @default(now())
+  status       String    @default("SCHEDULED")
+  isLegacy     Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  mvpId        String?
+  teamAScore   Int?
+  teamBScore   Int?
+  updatedAt    DateTime  @updatedAt
   rsvpDeadline DateTime?
+  mvp          Player?   @relation("MatchMVP", fields: [mvpId], references: [id])
+  season       Season    @relation(fields: [seasonId], references: [id])
+  mvpVotes     MvpVote[]
   rsvps        Rsvp[]
+  teamAPlayers Player[]  @relation("TeamAMatches")
+  teamBPlayers Player[]  @relation("TeamBMatches")
 }
 
 model Payment {
-  id       String @id @default(uuid())
-  playerId String
-  player   Player @relation(fields: [playerId], references: [id])
-
-  amount Decimal @db.Decimal(10, 2)
-  status String  @default("PENDING") // e.g., 'PENDING', 'PAID', 'CANCELLED'
-
-  // Audit trail requirements
+  id        String    @id @default(uuid())
+  playerId  String
+  amount    Decimal   @db.Decimal(10, 2)
+  status    String    @default("PENDING")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
-  deletedAt DateTime? // WHY: Soft delete to preserve financial history and guarantee append-only ledger
+  deletedAt DateTime?
+  player    Player    @relation(fields: [playerId], references: [id])
 }
 
 model MvpVote {
   id          String   @id @default(uuid())
   matchId     String
-  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
-  voterId     String   // Player ID of the voter
-  voter       Player   @relation("VoterRelation", fields: [voterId], references: [id], onDelete: Cascade)
-  candidateId String   // Player ID of the candidate voted for
-  candidate   Player   @relation("CandidateRelation", fields: [candidateId], references: [id], onDelete: Cascade)
+  voterId     String
+  candidateId String
   createdAt   DateTime @default(now())
+  candidate   Player   @relation("CandidateRelation", fields: [candidateId], references: [id], onDelete: Cascade)
+  match       Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  voter       Player   @relation("VoterRelation", fields: [voterId], references: [id], onDelete: Cascade)
 
-  @@unique([matchId, voterId]) // WHY: Ensure a participant can cast exactly one vote per match.
+  @@unique([matchId, voterId])
 }
 
 model Rsvp {
   id        String   @id @default(uuid())
   matchId   String
-  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
   playerId  String
-  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  status    String   @default("PENDING") // 'PENDING', 'CONFIRMED', 'DECLINED'
+  status    String   @default("PENDING")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  match     Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
 
-  @@unique([matchId, playerId]) // WHY: Ensure exactly one RSVP record per player per match.
+  @@unique([matchId, playerId])
+}
+
+// WHY: Stores honors (champions, top scorer, etc.) as first-class records so that historical
+// achievements predating the app can live in the Hall of Fame without a full Season behind them.
+model Award {
+  id        String   @id @default(uuid())
+  type      String   @default("CHAMPION") // 'CHAMPION', 'TOP_SCORER', 'MVP_OF_SEASON'
+  title     String? // Optional display label, e.g. "Champion 2024 Winter"
+  year      Int // Self-contained year so legacy awards stand alone without a Season row.
+  playerId  String
+  seasonId  String? // Null for pre-app legacy honors with no Season record.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  player    Player   @relation(fields: [playerId], references: [id])
+  season    Season?  @relation(fields: [seasonId], references: [id])
+
+  @@unique([playerId, seasonId, type]) // Prevent duplicate season-backed honors per player.
 }

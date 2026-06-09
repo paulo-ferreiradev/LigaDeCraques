@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { MatchesService } from './matches.service';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { CreateLegacyMatchDto } from './dto/create-legacy-match.dto';
 import { UpdateTeamsDto } from './dto/update-teams.dto';
 import { RecordResultDto } from './dto/record-result.dto';
 import { QueryMatchDto } from './dto/query-match.dto';
@@ -34,6 +35,15 @@ export class MatchesController {
   @ApiOperation({ summary: 'Schedule a new match (Admin only)' })
   create(@Body() createMatchDto: CreateMatchDto) {
     return this.matchesService.create(createMatchDto);
+  }
+
+  @Post('legacy')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth() // WHY: Backfilling historical results directly affects standings, so Admin only.
+  @ApiOperation({ summary: 'Insert a retroactive, already-finished match with final score (Admin only)' })
+  createLegacy(@Body() createLegacyMatchDto: CreateLegacyMatchDto) {
+    return this.matchesService.createLegacyMatch(createLegacyMatchDto);
   }
 
   @Get()

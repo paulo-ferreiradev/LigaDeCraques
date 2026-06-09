@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMatchDto } from './dto/create-match.dto';
+import { CreateLegacyMatchDto } from './dto/create-legacy-match.dto';
 import { UpdateTeamsDto } from './dto/update-teams.dto';
 import { RecordResultDto } from './dto/record-result.dto';
 import { QueryMatchDto } from './dto/query-match.dto';
@@ -72,6 +73,68 @@ export class MatchesService {
     }
 
     return match;
+  }
+
+  async createLegacyMatch(dto: CreateLegacyMatchDto) {
+    // WHY: A retroactive match (played before the app existed) is created directly as COMPLETED
+    // with its final score and rosters, so the standings engine includes it with no point overrides.
+    // We deliberately skip RSVP generation and guest auto-billing — those settlements happened offline.
+    const season = await this.prisma.season.findUnique({
+      where: { id: dto.seasonId },
+    });
+    if (!season) {
+      throw new NotFoundException(`Season with ID ${dto.seasonId} not found`);
+    }
+
+    const teamAPlayerIds = dto.teamAPlayerIds;
+    const teamBPlayerIds = dto.teamBPlayerIds;
+    const allPlayerIds = [...teamAPlayerIds, ...teamBPlayerIds];
+
+    // WHY: A player cannot appear on both teams in the same match.
+    const overlap = teamAPlayerIds.filter((id) => teamBPlayerIds.includes(id));
+    if (overlap.length > 0) {
+      throw new BadRequestException(
+        'A player cannot be on both Team A and Team B in the same match.',
+      );
+    }
+
+    // WHY: Every supplied roster ID must reference a real player, else the connect would fail opaquely.
+    const existingPlayers = await this.prisma.player.findMany({
+      where: { id: { in: allPlayerIds } },
+      select: { id: true },
+    });
+    if (existingPlayers.length !== new Set(allPlayerIds).size) {
+      throw new BadRequestException('One or more player IDs do not exist.');
+    }
+
+    // WHY: If an MVP is supplied it must have actually played in this match.
+    if (dto.mvpId && !allPlayerIds.includes(dto.mvpId)) {
+      throw new BadRequestException('The MVP must be one of the rostered players.');
+    }
+
+    return this.prisma.match.create({
+      data: {
+        seasonId: dto.seasonId,
+        playedAt: new Date(dto.playedAt),
+        status: 'COMPLETED',
+        isLegacy: true,
+        teamAScore: dto.teamAScore,
+        teamBScore: dto.teamBScore,
+        mvpId: dto.mvpId ?? null,
+        teamAPlayers: {
+          connect: teamAPlayerIds.map((id) => ({ id })),
+        },
+        teamBPlayers: {
+          connect: teamBPlayerIds.map((id) => ({ id })),
+        },
+      },
+      include: {
+        season: true,
+        teamAPlayers: true,
+        teamBPlayers: true,
+        mvp: true,
+      },
+    });
   }
 
   async findOne(id: string) {

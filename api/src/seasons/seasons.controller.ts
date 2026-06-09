@@ -13,6 +13,7 @@ import { SeasonsService } from './seasons.service';
 import { CreateSeasonDto } from './dto/create-season.dto';
 import { QuerySeasonDto } from './dto/query-season.dto';
 import { UpdateSeasonDto } from './dto/update-season.dto';
+import { CreateAwardDto } from './dto/create-award.dto';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { AccessTokenGuard } from '../auth/guards/accessToken.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -43,6 +44,15 @@ export class SeasonsController {
   getHallOfFame() {
     // WHY: Returns aggregated championship counts to show a premium list of all historic league champions.
     return this.seasonsService.getHallOfFame();
+  }
+
+  @Post('awards')
+  @UseGuards(AccessTokenGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth() // WHY: Granting honors (incl. historical champions) is an administrative action.
+  @ApiOperation({ summary: 'Grant a (possibly historical) award to a player (Admin only)' })
+  createAward(@Body() createAwardDto: CreateAwardDto) {
+    return this.seasonsService.createAward(createAwardDto);
   }
 
   @Get('active')

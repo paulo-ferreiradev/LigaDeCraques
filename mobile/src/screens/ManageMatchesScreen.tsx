@@ -62,6 +62,17 @@ const ManageMatchesScreen = () => {
   const [teamAScore, setTeamAScore] = useState('');
   const [teamBScore, setTeamBScore] = useState('');
 
+  // WHY: Legacy (retroactive) match entry — a game played before the app, inserted as already
+  // COMPLETED with its final score so it counts towards standings with no manual point overrides.
+  const [showLegacyForm, setShowLegacyForm] = useState(false);
+  const [legacyDate, setLegacyDate] = useState('');
+  const [legacyScoreA, setLegacyScoreA] = useState('');
+  const [legacyScoreB, setLegacyScoreB] = useState('');
+  const [legacyTeamAIds, setLegacyTeamAIds] = useState<string[]>([]);
+  const [legacyTeamBIds, setLegacyTeamBIds] = useState<string[]>([]);
+  const [legacyMvpId, setLegacyMvpId] = useState<string | null>(null);
+  const [isCreatingLegacy, setIsCreatingLegacy] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -113,6 +124,74 @@ const ManageMatchesScreen = () => {
       Alert.alert('Error', e.response?.data?.message || 'Failed to schedule match.');
     } finally {
       setIsScheduling(false);
+    }
+  };
+
+  const toggleLegacyPlayerTeam = (playerId: string, team: 'A' | 'B') => {
+    if (team === 'A') {
+      if (legacyTeamAIds.includes(playerId)) {
+        setLegacyTeamAIds((prev) => prev.filter((id) => id !== playerId));
+      } else {
+        setLegacyTeamBIds((prev) => prev.filter((id) => id !== playerId));
+        setLegacyTeamAIds((prev) => [...prev, playerId]);
+      }
+    } else {
+      if (legacyTeamBIds.includes(playerId)) {
+        setLegacyTeamBIds((prev) => prev.filter((id) => id !== playerId));
+      } else {
+        setLegacyTeamAIds((prev) => prev.filter((id) => id !== playerId));
+        setLegacyTeamBIds((prev) => [...prev, playerId]);
+      }
+    }
+    // WHY: If the removed player was the chosen MVP, clear the stale selection.
+    if (legacyMvpId === playerId) setLegacyMvpId(null);
+  };
+
+  const handleCreateLegacyMatch = async () => {
+    if (!activeSeason) {
+      Alert.alert('Error', 'No active season running.');
+      return;
+    }
+    // WHY: Backend expects an ISO date string; accept a simple YYYY-MM-DD from the admin.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(legacyDate)) {
+      Alert.alert('Validation Error', 'Please enter the match date as YYYY-MM-DD (e.g. 2026-01-14).');
+      return;
+    }
+    const scoreA = parseInt(legacyScoreA, 10);
+    const scoreB = parseInt(legacyScoreB, 10);
+    if (isNaN(scoreA) || isNaN(scoreB) || scoreA < 0 || scoreB < 0) {
+      Alert.alert('Validation Error', 'Please enter valid scores for both teams.');
+      return;
+    }
+    if (legacyTeamAIds.length === 0 || legacyTeamBIds.length === 0) {
+      Alert.alert('Validation Error', 'Please assign at least one player to Team A and Team B.');
+      return;
+    }
+
+    setIsCreatingLegacy(true);
+    try {
+      await apiClient.post('/matches/legacy', {
+        seasonId: activeSeason.id,
+        playedAt: `${legacyDate}T12:00:00.000Z`,
+        teamAScore: scoreA,
+        teamBScore: scoreB,
+        teamAPlayerIds: legacyTeamAIds,
+        teamBPlayerIds: legacyTeamBIds,
+        ...(legacyMvpId && { mvpId: legacyMvpId }),
+      });
+      Alert.alert('Success', 'Past result saved. It now counts towards the standings.');
+      setShowLegacyForm(false);
+      setLegacyDate('');
+      setLegacyScoreA('');
+      setLegacyScoreB('');
+      setLegacyTeamAIds([]);
+      setLegacyTeamBIds([]);
+      setLegacyMvpId(null);
+      loadData();
+    } catch (e: any) {
+      Alert.alert('Error', e.response?.data?.message || 'Failed to save past result.');
+    } finally {
+      setIsCreatingLegacy(false);
     }
   };
 
@@ -284,6 +363,39 @@ const ManageMatchesScreen = () => {
     );
   };
 
+  const renderLegacyRosterRow = (item: Player) => {
+    const inA = legacyTeamAIds.includes(item.id);
+    const inB = legacyTeamBIds.includes(item.id);
+
+    return (
+      <View key={item.id} style={styles.playerRosterRow}>
+        <Text style={styles.playerName}>
+          {item.name}
+          {item.playerType === 'GUEST' ? ' (guest)' : ''}
+        </Text>
+        <View style={styles.rosterBtns}>
+          <TouchableOpacity
+            style={[styles.teamBtn, inA && styles.teamBtnActiveA]}
+            onPress={() => toggleLegacyPlayerTeam(item.id, 'A')}
+          >
+            <Text style={styles.teamBtnText}>A</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.teamBtn, inB && styles.teamBtnActiveB]}
+            onPress={() => toggleLegacyPlayerTeam(item.id, 'B')}
+          >
+            <Text style={styles.teamBtnText}>B</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  // WHY: MVP candidates for a legacy match are exactly the players placed on either roster.
+  const legacyRosterPlayers = players.filter(
+    (p) => legacyTeamAIds.includes(p.id) || legacyTeamBIds.includes(p.id),
+  );
+
   return (
     <ScrollView style={styles.container}>
       {/* 1. Schedule Match Card */}
@@ -305,6 +417,115 @@ const ManageMatchesScreen = () => {
               <Text style={styles.btnText}>Schedule Now</Text>
             )}
           </TouchableOpacity>
+        </View>
+      )}
+
+      {/* 1b. Add Past Result (Legacy Match) */}
+      {activeSeason && (
+        <View style={styles.card}>
+          <View style={styles.legacyHeaderRow}>
+            <Text style={styles.cardTitle}>Add Past Result</Text>
+            <TouchableOpacity
+              style={styles.legacyToggleBtn}
+              onPress={() => setShowLegacyForm((v) => !v)}
+            >
+              <Ionicons
+                name={showLegacyForm ? 'chevron-up' : 'add'}
+                size={16}
+                color="#FFFFFF"
+              />
+              <Text style={styles.btnText}>{showLegacyForm ? 'Close' : 'New'}</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.cardDesc}>
+            Insert a match already played (before the app) into {activeSeason.year}{' '}
+            {activeSeason.seasonType}. It is saved as finished with its final score and counts
+            towards the standings immediately.
+          </Text>
+
+          {showLegacyForm && (
+            <>
+              <Text style={styles.sectionTitle}>Match Date</Text>
+              <TextInput
+                style={styles.dateInput}
+                placeholder="YYYY-MM-DD (e.g. 2026-01-14)"
+                placeholderTextColor="#6B7280"
+                value={legacyDate}
+                onChangeText={setLegacyDate}
+                autoCapitalize="none"
+              />
+
+              <Text style={styles.sectionTitle}>Assign Team Rosters</Text>
+              <View style={styles.rosterGrid}>{players.map(renderLegacyRosterRow)}</View>
+
+              <Text style={styles.sectionTitle}>Final Score</Text>
+              <View style={styles.scoresRow}>
+                <View style={styles.scoreInputGroup}>
+                  <Text style={styles.scoreInputLabel}>Team A Score</Text>
+                  <TextInput
+                    style={styles.scoreInput}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor="#6B7280"
+                    value={legacyScoreA}
+                    onChangeText={setLegacyScoreA}
+                  />
+                </View>
+                <View style={styles.scoreInputGroup}>
+                  <Text style={styles.scoreInputLabel}>Team B Score</Text>
+                  <TextInput
+                    style={styles.scoreInput}
+                    keyboardType="number-pad"
+                    placeholder="0"
+                    placeholderTextColor="#6B7280"
+                    value={legacyScoreB}
+                    onChangeText={setLegacyScoreB}
+                  />
+                </View>
+              </View>
+
+              {legacyRosterPlayers.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>MVP (optional)</Text>
+                  <View style={styles.mvpDropdown}>
+                    {legacyRosterPlayers.map((p) => {
+                      const selected = legacyMvpId === p.id;
+                      return (
+                        <TouchableOpacity
+                          key={p.id}
+                          style={[styles.mvpItem, selected && styles.mvpItemActive]}
+                          onPress={() => setLegacyMvpId(selected ? null : p.id)}
+                        >
+                          <Ionicons
+                            name="sparkles"
+                            size={12}
+                            color={selected ? '#EAB308' : '#6B7280'}
+                          />
+                          <Text
+                            style={[styles.mvpItemText, selected && styles.mvpItemTextActive]}
+                          >
+                            {p.name}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
+
+              <TouchableOpacity
+                style={[styles.btnGreen, styles.topSpacing]}
+                onPress={handleCreateLegacyMatch}
+                disabled={isCreatingLegacy}
+              >
+                {isCreatingLegacy ? (
+                  <ActivityIndicator color="#FFFFFF" />
+                ) : (
+                  <Text style={styles.btnText}>Save Past Result</Text>
+                )}
+              </TouchableOpacity>
+            </>
+          )}
         </View>
       )}
 
@@ -523,6 +744,28 @@ const styles = StyleSheet.create({
     marginTop: 4,
     lineHeight: 18,
     marginBottom: 16,
+  },
+  legacyHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  legacyToggleBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3B82F6',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+  },
+  dateInput: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    color: '#FFFFFF',
+    padding: 10,
+    fontSize: 14,
   },
   btnGreen: {
     backgroundColor: '#10B981',

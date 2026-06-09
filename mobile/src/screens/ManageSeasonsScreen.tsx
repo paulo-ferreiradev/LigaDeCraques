@@ -19,12 +19,25 @@ interface Season {
   status: string;
 }
 
+interface Player {
+  id: string;
+  name: string;
+}
+
 const ManageSeasonsScreen = () => {
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [year, setYear] = useState('');
   const [seasonType, setSeasonType] = useState<'SUMMER' | 'WINTER'>('SUMMER');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // WHY: Hall of Fame award granting — used to register historical champions that predate the app.
+  const [players, setPlayers] = useState<Player[]>([]);
+  const [awardPlayerId, setAwardPlayerId] = useState<string | null>(null);
+  const [awardYear, setAwardYear] = useState('');
+  const [awardTitle, setAwardTitle] = useState('');
+  const [awardSeasonId, setAwardSeasonId] = useState<string | null>(null);
+  const [isGrantingAward, setIsGrantingAward] = useState(false);
 
   const fetchSeasons = useCallback(async () => {
     try {
@@ -37,9 +50,54 @@ const ManageSeasonsScreen = () => {
     }
   }, []);
 
+  const fetchPlayers = useCallback(async () => {
+    try {
+      const response = await apiClient.get('/players');
+      setPlayers(response.data);
+    } catch (e) {
+      console.log('Error fetching players:', e);
+    }
+  }, []);
+
   useEffect(() => {
     fetchSeasons();
-  }, [fetchSeasons]);
+    fetchPlayers();
+  }, [fetchSeasons, fetchPlayers]);
+
+  const handleGrantAward = async () => {
+    if (!awardPlayerId) {
+      Alert.alert('Validation Error', 'Please select the player who won the title.');
+      return;
+    }
+    const parsedYear = parseInt(awardYear, 10);
+    if (isNaN(parsedYear) || parsedYear < 1900 || parsedYear > 2100) {
+      Alert.alert('Validation Error', 'Please enter a valid year (e.g. 2024).');
+      return;
+    }
+
+    setIsGrantingAward(true);
+    try {
+      // WHY: type is CHAMPION (the Hall of Fame source). seasonId/title are optional — omit them
+      // entirely for pre-app legacy honors so the backend stores a standalone, year-only award.
+      await apiClient.post('/seasons/awards', {
+        playerId: awardPlayerId,
+        year: parsedYear,
+        type: 'CHAMPION',
+        ...(awardTitle.trim() && { title: awardTitle.trim() }),
+        ...(awardSeasonId && { seasonId: awardSeasonId }),
+      });
+      Alert.alert('Success', 'Champion added to the Hall of Fame!');
+      setAwardPlayerId(null);
+      setAwardYear('');
+      setAwardTitle('');
+      setAwardSeasonId(null);
+    } catch (e: any) {
+      console.log('Error granting award:', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to grant award.');
+    } finally {
+      setIsGrantingAward(false);
+    }
+  };
 
   const handleCreateSeason = async () => {
     const parsedYear = parseInt(year, 10);
@@ -154,8 +212,8 @@ const ManageSeasonsScreen = () => {
     );
   };
 
-  return (
-    <View style={styles.container}>
+  const ListHeader = (
+    <>
       {/* Create Form Card */}
       <View style={styles.formCard}>
         <Text style={styles.formTitle}>Create New Season</Text>
@@ -199,23 +257,106 @@ const ManageSeasonsScreen = () => {
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.sectionHeader}>Existing Seasons</Text>
+      {/* Hall of Fame Award Card */}
+      <View style={styles.formCard}>
+        <Text style={styles.formTitle}>Add Hall of Fame Champion</Text>
+        <Text style={styles.formHint}>
+          Register a historical champion (even from years with no season recorded in the app).
+        </Text>
 
-      {isLoading ? (
-        <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 20 }} />
-      ) : (
-        <FlatList
-          data={seasons}
-          keyExtractor={(item) => item.id}
-          renderItem={renderSeasonItem}
-          contentContainerStyle={styles.listContainer}
-          ListEmptyComponent={
+        <Text style={styles.fieldLabel}>Champion</Text>
+        <View style={styles.chipWrap}>
+          {players.map((p) => {
+            const selected = awardPlayerId === p.id;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[styles.chip, selected && styles.chipActive]}
+                onPress={() => setAwardPlayerId(selected ? null : p.id)}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextActive]}>{p.name}</Text>
+              </TouchableOpacity>
+            );
+          })}
+          {players.length === 0 && (
+            <Text style={styles.formHint}>No players found. Create players first.</Text>
+          )}
+        </View>
+
+        <Text style={styles.fieldLabel}>Year</Text>
+        <TextInput
+          style={styles.fullInput}
+          placeholder="e.g. 2024"
+          placeholderTextColor="#6B7280"
+          keyboardType="number-pad"
+          maxLength={4}
+          value={awardYear}
+          onChangeText={setAwardYear}
+        />
+
+        <Text style={styles.fieldLabel}>Title (optional)</Text>
+        <TextInput
+          style={styles.fullInput}
+          placeholder="e.g. Champion 2024 Winter"
+          placeholderTextColor="#6B7280"
+          value={awardTitle}
+          onChangeText={setAwardTitle}
+        />
+
+        <Text style={styles.fieldLabel}>Link to a recorded season (optional)</Text>
+        <View style={styles.chipWrap}>
+          {seasons.map((s) => {
+            const selected = awardSeasonId === s.id;
+            return (
+              <TouchableOpacity
+                key={s.id}
+                style={[styles.chip, selected && styles.chipActive]}
+                onPress={() => setAwardSeasonId(selected ? null : s.id)}
+              >
+                <Text style={[styles.chipText, selected && styles.chipTextActive]}>
+                  {s.year} {s.seasonType}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        <TouchableOpacity
+          style={[styles.createBtn, styles.awardBtn]}
+          onPress={handleGrantAward}
+          disabled={isGrantingAward}
+        >
+          {isGrantingAward ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.createBtnText}>Add to Hall of Fame</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
+      <Text style={styles.sectionHeader}>Existing Seasons</Text>
+    </>
+  );
+
+  return (
+    <View style={styles.container}>
+      <FlatList
+        data={seasons}
+        keyExtractor={(item) => item.id}
+        renderItem={renderSeasonItem}
+        ListHeaderComponent={ListHeader}
+        contentContainerStyle={styles.listContainer}
+        keyboardShouldPersistTaps="handled"
+        ListEmptyComponent={
+          isLoading ? (
+            <ActivityIndicator size="large" color="#10B981" style={{ marginTop: 20 }} />
+          ) : (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No seasons configured yet.</Text>
             </View>
-          }
-        />
-      )}
+          )
+        }
+      />
     </View>
   );
 };
@@ -291,6 +432,62 @@ const styles = StyleSheet.create({
   createBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
+    fontWeight: 'bold',
+  },
+  awardBtn: {
+    backgroundColor: '#EAB308',
+    marginTop: 8,
+  },
+  formHint: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 12,
+  },
+  fieldLabel: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    marginTop: 4,
+  },
+  fullInput: {
+    backgroundColor: '#0F172A',
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    color: '#FFFFFF',
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 12,
+  },
+  chipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: 12,
+  },
+  chip: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    marginRight: 8,
+    marginBottom: 8,
+  },
+  chipActive: {
+    borderColor: '#EAB308',
+    backgroundColor: 'rgba(234, 179, 8, 0.12)',
+  },
+  chipText: {
+    color: '#9CA3AF',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  chipTextActive: {
+    color: '#EAB308',
     fontWeight: 'bold',
   },
   sectionHeader: {

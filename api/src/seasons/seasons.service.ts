@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateSeasonDto } from './dto/create-season.dto';
 import { QuerySeasonDto } from './dto/query-season.dto';
 import { UpdateSeasonDto } from './dto/update-season.dto';
+import { CreateAwardDto } from './dto/create-award.dto';
 
 @Injectable()
 export class SeasonsService {
@@ -68,6 +69,7 @@ export class SeasonsService {
 
     if (updateSeasonDto.status === 'FINISHED') {
       // WHY: Automatically compute and assign the season champion from the leaderboard on season close.
+      // Computed before the transaction since it only reads (already-COMPLETED) matches.
       const standings = await this.getLeaderboard(id);
       if (standings.length > 0) {
         championId = standings[0].playerId;
@@ -77,12 +79,49 @@ export class SeasonsService {
       championId = null;
     }
 
-    return this.prisma.season.update({
-      where: { id },
-      data: {
-        ...updateSeasonDto,
-        ...(championId !== undefined && { championId }),
-      },
+    // WHY: Season row and its CHAMPION Award must move together — the Award table is the single
+    // source of truth for the Hall of Fame, so the two writes are wrapped in one transaction.
+    return this.prisma.$transaction(async (tx) => {
+      const season = await tx.season.update({
+        where: { id },
+        data: {
+          ...updateSeasonDto,
+          ...(championId !== undefined && { championId }),
+        },
+      });
+
+      if (updateSeasonDto.status === 'FINISHED' && championId) {
+        // WHY: Emit the canonical CHAMPION award. Upsert keeps it idempotent if a season is
+        // finished more than once (e.g. closed, re-opened, closed again with a new winner).
+        await tx.award.upsert({
+          where: {
+            playerId_seasonId_type: {
+              playerId: championId,
+              seasonId: id,
+              type: 'CHAMPION',
+            },
+          },
+          update: {
+            year: season.year,
+            title: `Champion ${season.year} ${season.seasonType}`,
+          },
+          create: {
+            playerId: championId,
+            seasonId: id,
+            type: 'CHAMPION',
+            year: season.year,
+            title: `Champion ${season.year} ${season.seasonType}`,
+          },
+        });
+      } else if (updateSeasonDto.status === 'ACTIVE') {
+        // WHY: Re-activating clears the title, so drop this season's auto-generated CHAMPION award
+        // to keep the Award table consistent with the cleared championId.
+        await tx.award.deleteMany({
+          where: { seasonId: id, type: 'CHAMPION' },
+        });
+      }
+
+      return season;
     });
   }
 
@@ -201,16 +240,48 @@ export class SeasonsService {
     });
   }
 
+  async createAward(dto: CreateAwardDto) {
+    // WHY: Manually grant an honor — typically a historical champion from before the app existed.
+    const player = await this.prisma.player.findUnique({
+      where: { id: dto.playerId },
+    });
+    if (!player) {
+      throw new NotFoundException(`Player with ID ${dto.playerId} not found`);
+    }
+
+    // WHY: If tied to a real season, validate it exists so the optional relation never dangles.
+    if (dto.seasonId) {
+      await this.findOne(dto.seasonId);
+    }
+
+    try {
+      return await this.prisma.award.create({
+        data: {
+          playerId: dto.playerId,
+          year: dto.year,
+          type: dto.type ?? 'CHAMPION',
+          title: dto.title ?? null,
+          seasonId: dto.seasonId ?? null,
+        },
+        include: { player: true, season: true },
+      });
+    } catch (error: any) {
+      // WHY: Surface the unique([playerId, seasonId, type]) collision as a clean 400.
+      if (error?.code === 'P2002') {
+        throw new BadRequestException(
+          'This player already holds an award of this type for the given season.',
+        );
+      }
+      throw error;
+    }
+  }
+
   async getHallOfFame() {
-    // WHY: Retrieve all finished seasons with a calculated champion, loading champion profiles.
-    const finishedSeasons = await this.prisma.season.findMany({
-      where: {
-        status: 'FINISHED',
-        championId: { not: null },
-      },
-      include: {
-        champion: true,
-      },
+    // WHY: Single source of truth — every championship (live or historical) is a CHAMPION Award,
+    // so the Hall of Fame is one indexed query with no cross-referencing against Season.
+    const awards = await this.prisma.award.findMany({
+      where: { type: 'CHAMPION' },
+      include: { player: true, season: true },
     });
 
     const championsMap = new Map<
@@ -223,25 +294,28 @@ export class SeasonsService {
       }
     >();
 
-    for (const season of finishedSeasons) {
-      if (season.champion) {
-        const champ = season.champion;
-        if (!championsMap.has(champ.id)) {
-          championsMap.set(champ.id, {
-            playerId: champ.id,
-            name: champ.name,
-            titlesCount: 0,
-            seasons: [],
-          });
-        }
-        const record = championsMap.get(champ.id)!;
-        record.titlesCount += 1;
-        record.seasons.push(`${season.year} ${season.seasonType}`);
+    for (const award of awards) {
+      const label =
+        award.title ??
+        (award.season
+          ? `${award.season.year} ${award.season.seasonType}`
+          : `${award.year}`);
+
+      if (!championsMap.has(award.player.id)) {
+        championsMap.set(award.player.id, {
+          playerId: award.player.id,
+          name: award.player.name,
+          titlesCount: 0,
+          seasons: [],
+        });
       }
+      const record = championsMap.get(award.player.id)!;
+      record.titlesCount += 1;
+      record.seasons.push(label);
     }
 
     const list = Array.from(championsMap.values());
-    // WHY: Return sorted decresingly by count of titles won.
+    // WHY: Return sorted decreasingly by count of titles won.
     return list.sort((a, b) => b.titlesCount - a.titlesCount);
   }
 
