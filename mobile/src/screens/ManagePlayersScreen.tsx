@@ -44,6 +44,10 @@ const ManagePlayersScreen = ({ navigation }: any) => {
   const [linkEmail, setLinkEmail] = useState('');
   const [isLinking, setIsLinking] = useState(false);
 
+  // Admin password reset State (for profiles that already have a user account)
+  const [resetPassword, setResetPassword] = useState('');
+  const [isResettingPw, setIsResettingPw] = useState(false);
+
   // Per-row deletion spinner
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -90,6 +94,7 @@ const ManagePlayersScreen = ({ navigation }: any) => {
     setEditPlayerType(player.playerType || 'FIXED');
     setEditRole(player.user?.role || 'USER');
     setLinkEmail('');
+    setResetPassword('');
   };
 
   const handleSaveEdit = async () => {
@@ -141,6 +146,33 @@ const ManagePlayersScreen = ({ navigation }: any) => {
       Alert.alert('Error', e.response?.data?.message || 'Failed to link this account to the player profile.');
     } finally {
       setIsLinking(false);
+    }
+  };
+
+  // WHY: Admin-forced reset for users who lost their password. The endpoint takes the User id
+  // (shared with the player profile) and is guarded by the ADMIN role on the backend.
+  const handleResetPassword = async () => {
+    if (!editingPlayer?.user) return;
+    if (resetPassword.length < 6) {
+      Alert.alert('Validation Error', 'New password must be at least 6 characters.');
+      return;
+    }
+
+    setIsResettingPw(true);
+    try {
+      await apiClient.patch(`/users/${editingPlayer.user.id}/reset-password`, {
+        newPassword: resetPassword,
+      });
+      Alert.alert(
+        'Success',
+        `Password reset for '${editingPlayer.name}'. Share the new password with them — they can change it later in their profile.`,
+      );
+      setResetPassword('');
+    } catch (e: any) {
+      console.log('Error resetting password:', e);
+      Alert.alert('Error', e.response?.data?.message || 'Failed to reset password.');
+    } finally {
+      setIsResettingPw(false);
     }
   };
 
@@ -302,6 +334,39 @@ const ManagePlayersScreen = ({ navigation }: any) => {
                           onPress={() => setEditRole('ADMIN')}
                         >
                           <Text style={styles.pillText}>ADMIN</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* WHY: Admin-forced password reset for someone who lost access. Sets a new
+                          password directly; the user can change it afterwards from their profile. */}
+                      <View style={styles.resetSection}>
+                        <View style={styles.resetSectionHeader}>
+                          <Ionicons name="key-outline" size={16} color="#EF4444" />
+                          <Text style={styles.resetSectionTitle}>Reset Password</Text>
+                        </View>
+                        <Text style={styles.resetSectionDesc}>
+                          Set a new password for this user (e.g. if they forgot theirs). Tell them the
+                          new password — they can change it later in their own profile.
+                        </Text>
+                        <TextInput
+                          style={styles.input}
+                          placeholder="New password (min. 6 characters)"
+                          placeholderTextColor="#6B7280"
+                          secureTextEntry
+                          autoCapitalize="none"
+                          value={resetPassword}
+                          onChangeText={setResetPassword}
+                        />
+                        <TouchableOpacity
+                          style={styles.resetBtn}
+                          onPress={handleResetPassword}
+                          disabled={isResettingPw}
+                        >
+                          {isResettingPw ? (
+                            <ActivityIndicator color="#FFFFFF" size="small" />
+                          ) : (
+                            <Text style={styles.resetBtnText}>Set New Password</Text>
+                          )}
                         </TouchableOpacity>
                       </View>
                     </>
@@ -687,6 +752,45 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: 'bold',
   },
+  resetSection: {
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#EF4444',
+    padding: 14,
+    marginTop: 4,
+    marginBottom: 16,
+  },
+  resetSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  resetSectionTitle: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: 'bold',
+    marginLeft: 6,
+  },
+  resetSectionDesc: {
+    color: '#9CA3AF',
+    fontSize: 11,
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  resetBtn: {
+    backgroundColor: '#EF4444',
+    borderRadius: 8,
+    paddingVertical: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  resetBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
   emptyContainer: {
     alignItems: 'center',
     justifyContent: 'center',
