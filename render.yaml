@@ -1,0 +1,29 @@
+# Render Blueprint (Infrastructure as Code) for the Liga de Craques API.
+# WHY: Versions the API service config and — crucially — enables auto-deploy on every push to
+# `main`, so the production API never again lags behind the repo (the bug that left /matches/legacy
+# and the password routes returning 404).
+#
+# The service `name` matches the existing service (its URL is tercas-fc-api.onrender.com), so when
+# this blueprint is synced Render ADOPTS that service instead of creating a duplicate.
+#
+# Secrets use `sync: false`: their values stay exactly as configured in the Render dashboard —
+# this file never stores or overwrites them.
+services:
+  - type: web
+    name: tercas-fc-api
+    runtime: node
+    # WHY: The NestJS app lives in the api/ subdirectory of this monorepo.
+    rootDir: api
+    branch: main
+    # WHY: The whole point — redeploy automatically when main is pushed.
+    autoDeploy: true
+    # WHY: Generate the Prisma client (schema includes Award + isLegacy) before compiling.
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_ACCESS_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
